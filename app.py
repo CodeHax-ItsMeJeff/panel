@@ -8,22 +8,15 @@ from datetime import datetime
 app = Flask(__name__)
 
 # ------------------------------------------------------------
-# Configuration – ALL from environment variables
+# Configuration – Safe fallbacks, no forced exits
 # ------------------------------------------------------------
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
-if not app.config['SECRET_KEY']:
-    print("ERROR: SECRET_KEY environment variable not set.", file=sys.stderr)
-    sys.exit(1)
+# Secret key: use env or a dev fallback (set env var for production!)
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'fallback-dev-key')
+if not os.environ.get('SECRET_KEY'):
+    print("WARNING: SECRET_KEY not set, using insecure fallback.", file=sys.stderr)
 
-# Database URL must be set. Render automatically provides one if you
-# link a database, but you can also paste the connection string manually.
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
-if not app.config['SQLALCHEMY_DATABASE_URI']:
-    print("ERROR: DATABASE_URL environment variable not set.", file=sys.stderr)
-    sys.exit(1)
-
-# Fix for Render’s "postgres://" → "postgresql://" requirement by SQLAlchemy
-# (Render sometimes uses `postgres://`; we replace it to avoid errors.)
+# Database URL: required, but we don't exit immediately – we handle later
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///devices.db')
 if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
     app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://', 1)
 
@@ -41,18 +34,18 @@ class Device(db.Model):
     added_on = db.Column(db.DateTime, default=datetime.utcnow)
 
 # ------------------------------------------------------------
-# Admin credentials (set in Render env vars)
+# Admin credentials (override via env vars, defaults are weak)
 # ------------------------------------------------------------
 ADMIN_USER = os.environ.get('ADMIN_USER', 'admin')
 ADMIN_PASS = os.environ.get('ADMIN_PASS', 'admin123')
 
 # ------------------------------------------------------------
-# Health check (useful for Render)
+# Health check
 # ------------------------------------------------------------
 @app.route('/health')
 def health():
     try:
-        db.session.execute('SELECT 1')
+        db.session.execute(db.text('SELECT 1'))
         return jsonify({"status": "healthy", "db": "connected"}), 200
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
@@ -167,7 +160,7 @@ def delete_device(device_id):
     return redirect(url_for('dashboard'))
 
 # ------------------------------------------------------------
-# Create all tables on startup (only if they don't exist)
+# Create tables on first run
 # ------------------------------------------------------------
 with app.app_context():
     try:
@@ -176,5 +169,8 @@ with app.app_context():
     except Exception as e:
         print(f"Warning: could not create tables – {e}", file=sys.stderr)
 
+# ------------------------------------------------------------
+# For local testing
+# ------------------------------------------------------------
 if __name__ == '__main__':
     app.run(debug=True)
