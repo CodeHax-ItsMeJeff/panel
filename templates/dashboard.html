@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - Device Manager</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+        <div class="container">
+            <span class="navbar-brand">🖥️ Device Admin</span>
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
+        <!-- Add new device -->
+        <div class="card shadow mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Whitelist a Device</h5>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="/add" class="row g-3">
+                    <div class="col-auto flex-grow-1">
+                        <input type="text" name="device_id" class="form-control" placeholder="Paste Device ID" required>
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-success">Add & Activate</button>
+                    </div>
+                </form>
+                <small class="text-muted">Newly added devices are automatically active (allowed).</small>
+            </div>
+        </div>
+
+        <!-- Device list -->
+        <div class="card shadow">
+            <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Registered Devices ({{ devices|length }})</h5>
+                <span class="badge bg-success">Active</span> / <span class="badge bg-danger">Banned</span>
+            </div>
+            <div class="card-body">
+                {% if devices %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Device ID</th>
+                                    <th>Status</th>
+                                    <th>Added On</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for device in devices %}
+                                    <tr>
+                                        <td><code>{{ device.device_id }}</code></td>
+                                        <td>
+                                            {% if device.status == 'active' %}
+                                                <span class="badge bg-success">Active</span>
+                                            {% else %}
+                                                <span class="badge bg-danger">Banned</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>{{ device.added_on.strftime('%Y-%m-%d %H:%M') }}</td>
+                                        <td style="white-space: nowrap;">
+                                            {% if device.status == 'active' %}
+                                                <a href="/ban/{{ device.id }}" class="btn btn-sm btn-warning" onclick="return confirm('Ban this device?')">Ban</a>
+                                            {% else %}
+                                                <a href="/unban/{{ device.id }}" class="btn btn-sm btn-success" onclick="return confirm('Unban this device?')">Unban</a>
+                                            {% endif %}
+                                            <a href="/delete/{{ device.id }}" class="btn btn-sm btn-outline-danger" onclick="return confirm('Permanently remove this device?')">Delete</a>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted">No devices added yet. Use the form above to whitelist one.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
