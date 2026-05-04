@@ -1,35 +1,65 @@
 import os
+import sys
 from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
-from werkzeug.security import check_password_hash, generate_password_hash
+from datetime import datetime
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'super-secret-key-change-me')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///devices.db')
+
+# ------------------------------------------------------------
+# Configuration – ALL from environment variables
+# ------------------------------------------------------------
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+if not app.config['SECRET_KEY']:
+    print("ERROR: SECRET_KEY environment variable not set.", file=sys.stderr)
+    sys.exit(1)
+
+# Database URL must be set. Render automatically provides one if you
+# link a database, but you can also paste the connection string manually.
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+if not app.config['SQLALCHEMY_DATABASE_URI']:
+    print("ERROR: DATABASE_URL environment variable not set.", file=sys.stderr)
+    sys.exit(1)
+
+# Fix for Render’s "postgres://" → "postgresql://" requirement by SQLAlchemy
+# (Render sometimes uses `postgres://`; we replace it to avoid errors.)
+if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
+    app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://', 1)
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
 
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
 # Database Model
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
 class Device(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     device_id = db.Column(db.String(100), unique=True, nullable=False)
     status = db.Column(db.String(20), default='active')  # active or banned
-    added_on = db.Column(db.DateTime, server_default=db.func.now())
+    added_on = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def __repr__(self):
-        return f'<Device {self.device_id} ({self.status})>'
-
-# Hardcoded admin credentials (change via environment variables)
+# ------------------------------------------------------------
+# Admin credentials (set in Render env vars)
+# ------------------------------------------------------------
 ADMIN_USER = os.environ.get('ADMIN_USER', 'admin')
 ADMIN_PASS = os.environ.get('ADMIN_PASS', 'admin123')
 
-# ------------------------------------------------------------------------------
-# Login / Logout logic
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
+# Health check (useful for Render)
+# ------------------------------------------------------------
+@app.route('/health')
+def health():
+    try:
+        db.session.execute('SELECT 1')
+        return jsonify({"status": "healthy", "db": "connected"}), 200
+    except Exception as e:
+        return jsonify({"status": "unhealthy", "error": str(e)}), 500
+
+# ------------------------------------------------------------
+# Login / Logout
+# ------------------------------------------------------------
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -57,9 +87,9 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
 # API for the CodeHax loader
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
 @app.route('/api/check_device', methods=['POST'])
 def check_device():
     data = request.get_json()
@@ -73,13 +103,11 @@ def check_device():
     device = Device.query.filter_by(device_id=device_id).first()
     if device and device.status == 'active':
         return jsonify({"access": True})
-    else:
-        # If device not found OR banned -> access denied
-        return jsonify({"access": False})
+    return jsonify({"access": False})
 
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
 # Dashboard and device management
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
 @app.route('/')
 @login_required
 def dashboard():
@@ -138,11 +166,15 @@ def delete_device(device_id):
     flash(f'Device {device.device_id} permanently removed.', 'danger')
     return redirect(url_for('dashboard'))
 
-# ------------------------------------------------------------------------------
-# Create tables
-# ------------------------------------------------------------------------------
+# ------------------------------------------------------------
+# Create all tables on startup (only if they don't exist)
+# ------------------------------------------------------------
 with app.app_context():
-    db.create_all()
+    try:
+        db.create_all()
+        print("Database tables checked/created successfully.")
+    except Exception as e:
+        print(f"Warning: could not create tables – {e}", file=sys.stderr)
 
 if __name__ == '__main__':
     app.run(debug=True)
