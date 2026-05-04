@@ -4,18 +4,18 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for, f
 from flask_sqlalchemy import SQLAlchemy
 from functools import wraps
 from datetime import datetime
+from sqlalchemy import text          # <-- REQUIRED for health check
 
 app = Flask(__name__)
 
 # ------------------------------------------------------------
 # Configuration – Safe fallbacks, no forced exits
 # ------------------------------------------------------------
-# Secret key: use env or a dev fallback (set env var for production!)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'fallback-dev-key')
 if not os.environ.get('SECRET_KEY'):
     print("WARNING: SECRET_KEY not set, using insecure fallback.", file=sys.stderr)
 
-# Database URL: required, but we don't exit immediately – we handle later
+# Database URL – Render automatically provides DATABASE_URL if linked.
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///devices.db')
 if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
     app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://', 1)
@@ -34,18 +34,18 @@ class Device(db.Model):
     added_on = db.Column(db.DateTime, default=datetime.utcnow)
 
 # ------------------------------------------------------------
-# Admin credentials (override via env vars, defaults are weak)
+# Admin credentials (override via environment variables)
 # ------------------------------------------------------------
 ADMIN_USER = os.environ.get('ADMIN_USER', 'admin')
 ADMIN_PASS = os.environ.get('ADMIN_PASS', 'admin123')
 
 # ------------------------------------------------------------
-# Health check
+# Health check – ensures database is reachable
 # ------------------------------------------------------------
 @app.route('/health')
 def health():
     try:
-        db.session.execute(db.text('SELECT 1'))
+        db.session.execute(text('SELECT 1'))
         return jsonify({"status": "healthy", "db": "connected"}), 200
     except Exception as e:
         return jsonify({"status": "unhealthy", "error": str(e)}), 500
@@ -170,7 +170,7 @@ with app.app_context():
         print(f"Warning: could not create tables – {e}", file=sys.stderr)
 
 # ------------------------------------------------------------
-# For local testing
+# Local development
 # ------------------------------------------------------------
 if __name__ == '__main__':
     app.run(debug=True)
