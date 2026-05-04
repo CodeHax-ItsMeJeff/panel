@@ -14,7 +14,7 @@ services:
       - key: ADMIN_USER
         value: admin
       - key: ADMIN_PASS
-        generateValue: true
+        value: admin123
 
 databases:
   - name: device-db
